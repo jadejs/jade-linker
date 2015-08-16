@@ -34,10 +34,7 @@ function link(ast) {
       }
     });
     if (expectedBlocks.length !== 0) {
-      //throw new Error('Unexpected blocks');
-      expectedBlocks.forEach(function (expectedBlock) {
-        console.warn('Warning: Unexpected block ' + expectedBlock.name + ' on line ' + expectedBlock.line + ' + of ' + expectedBlock.filename + '. This warning will be an error in v2.0.0');
-      });
+      throw new Error('Unused blocks: ' + expectedBlocks.map(function (b) { return '"' + b + '"'}).join(', '));
     }
     Object.keys(ast.declaredBlocks).forEach(function (name) {
       parent.declaredBlocks[name] = ast.declaredBlocks[name];
