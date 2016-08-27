@@ -20,6 +20,8 @@ function link(ast) {
   }
   ast = applyIncludes(ast);
   ast.declaredBlocks = findDeclaredBlocks(ast);
+  // Make all declarations of the same block reference the same node
+  extend(ast.declaredBlocks, ast);
   if (extendsNode) {
     var mixins = [];
     var expectedBlocks = [];
@@ -36,8 +38,11 @@ function link(ast) {
     });
     var parent = link(extendsNode.file.ast);
     extend(parent.declaredBlocks, ast);
+    // Rescan declared blocks as they might have been replaced after `extend`ing
+    ast.declaredBlocks = findDeclaredBlocks(ast);
     var foundBlockNames = [];
     walk(parent, function (node) {
+      if (node.type === 'Block' && node.wasInclude) return false;
       if (node.type === 'NamedBlock') {
         foundBlockNames.push(node.name);
       }
@@ -63,6 +68,7 @@ function link(ast) {
 function findDeclaredBlocks(ast) {
   var definitions = {};
   walk(ast, function before(node) {
+    if (node.type === 'Block' && node.wasInclude) return false;
     if (node.type === 'NamedBlock' && node.mode === 'replace') {
       definitions[node.name] = node;
     }
@@ -71,16 +77,15 @@ function findDeclaredBlocks(ast) {
 }
 function extend(parentBlocks, ast) {
   var stack = {};
-  walk(ast, function before(node) {
+  walk(ast, function before(node, replace) {
+    if (node.type === 'Block' && node.wasInclude) return false;
     if (node.type === 'NamedBlock') {
-      if (stack[node.name] === node.name) {
+      if (stack[node.name]) {
         return node.ignore = true;
       }
-      stack[node.name] = node.name;
+      stack[node.name] = true;
       var parentBlock = parentBlocks[node.name];
       if (parentBlock) {
-        if (parentBlock.parent) parentBlock = parentBlock.parent;
-        node.parent = parentBlock;
         switch (node.mode) {
           case 'append':
             parentBlock.nodes = parentBlock.nodes.concat(node.nodes);
@@ -92,22 +97,25 @@ function extend(parentBlocks, ast) {
             parentBlock.nodes = node.nodes;
             break;
         }
+        replace(parentBlock);
       }
     }
   }, function after(node) {
     if (node.type === 'NamedBlock' && !node.ignore) {
-      delete stack[node.name];
+      stack[node.name] = false;
     }
   });
 }
-function applyIncludes(ast, child) {
+function applyIncludes(ast) {
   return walk(ast, function before(node, replace) {
     if (node.type === 'RawInclude') {
       replace({type: 'Text', val: node.file.str.replace(/\r/g, '')});
     }
   }, function after(node, replace) {
     if (node.type === 'Include') {
-      replace(applyYield(link(node.file.ast), node.block));
+      var innerAst = link(node.file.ast);
+      innerAst.wasInclude = true;
+      replace(applyYield(innerAst, node.block));
     }
   });
 }
